@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -68,6 +67,7 @@ public class Pathfinding : MonoBehaviour
     public static int GridSize { get; private set; }
     public LayerMask layerMask;
     public MeshFilter cubeSphereMeshFilter;
+    public DebugDraw debugDrawer;
     
     private Dictionary<CubeFace, Vector2[]> uvMapToFace;
     
@@ -83,7 +83,9 @@ public class Pathfinding : MonoBehaviour
             {CubeFace.Bottom, mesh.uv4}, {CubeFace.Left, mesh.uv5}, {CubeFace.Right, mesh.uv6}
         };
         // All tiles are made of 2 triangles and theres 6 faces on the cube
-        GridSize = (int) Mathf.Sqrt(cubeSphereMeshFilter.sharedMesh.triangles.Length / 2 / 6);
+        var triangleCount = mesh.triangles.Length / 3;
+        GridSize = (int) Mathf.Sqrt(triangleCount / 2 / 6);
+        Debug.Log("Grid size: " + GridSize);
     }
 
     /// <summary>
@@ -94,6 +96,9 @@ public class Pathfinding : MonoBehaviour
         Mesh cubeSphereMesh = cubeSphereMeshFilter.sharedMesh;
         Vector3[] vertices = cubeSphereMesh.vertices;
         int[] triangles = cubeSphereMesh.triangles;
+
+        if (playerRayHit.triangleIndex == -1 || mouseRayHit.triangleIndex == -1)
+            throw new Exception("Something is wrong with the mesh collider (triangleIndex = -1)");
         
         int[] startTriangleIndices =
         {
@@ -110,7 +115,12 @@ public class Pathfinding : MonoBehaviour
         
         GridPoint startPoint = GridPointFromTriangle(startTriangleIndices);
         GridPoint endPoint   = GridPointFromTriangle(endTriangleIndices);
-        Debug.Log(CalculateShortestSurfaceDistance(startPoint, endPoint));
+        debugDrawer.DrawTriangle(endTriangleIndices, mouseRayHit.collider.transform, cubeSphereMesh);
+
+        Debug.Log("Start: " + FaceFromVertex(startTriangleIndices[0]) + " [" + startPoint.x + "|" + startPoint.y +
+                  "] " + "End: " + FaceFromVertex(endTriangleIndices[0]) + " [" + endPoint.x + "|" + endPoint.y + "] ");
+        Debug.Log("Distance: " + CalculateShortestSurfaceDistance(startPoint, endPoint));         
+        
         //TODO: this is where A* should start probably.
         
     }
@@ -140,6 +150,7 @@ public class Pathfinding : MonoBehaviour
         // CASE 1: start and end point are on the same face.
         if (start.face == end.face)
             return CalculateShortestDistance(start, end);
+        Debug.Log("Not Case 1");
 
         // CASE 2: end point is on a face that is connected to the start point.
         if (IsConnectedFace(start.face, end.face))
@@ -171,7 +182,7 @@ public class Pathfinding : MonoBehaviour
             }
             return CalculateShortestDistance(start, end);
         }
-        
+        Debug.Log("Not Case 2");
         // CASE 3: start and end point are on opposing faces.
         return OpposingFaceDistance(start, end);
     }
@@ -279,10 +290,13 @@ public class Pathfinding : MonoBehaviour
     }
 
     /// <summary>
-    /// Calculates the surface distance (not the necessarily the shortest one) for 2 points on opposing cube faces.
+    /// Calculates one of the surface distances (not the necessarily the shortest one) for 2 points on opposing cube faces.
     /// </summary>
-    private static int CalculateDistanceOnExtendedGrid(ExtendedGrid extendedGrid, GridPoint start, GridPoint end)
+    private static int CalculateDistanceOnExtendedGrid(ExtendedGrid extendedGrid, GridPoint startPoint, GridPoint endPoint)
     {
+        GridPoint start = new GridPoint(startPoint.face, startPoint.x, startPoint.y);
+        GridPoint end = new GridPoint(endPoint.face, endPoint.x, endPoint.y);
+        
         switch (extendedGrid)
         {
             case ExtendedGrid.TopLeft:
@@ -459,7 +473,7 @@ public class Pathfinding : MonoBehaviour
     /// </summary>
     private GridPoint GridPointFromTriangle(int[] vertexIndices)
     {
-        var tileSize = 1 / GridSize;
+        float tileSize = (float) 1 / GridSize;
         CubeFace face = FaceFromVertex(vertexIndices[0]); // they should all be on the same face, surely nothing can go wrong
         List<float> uvXValues = new List<float>();
         List<float> uvYValues = new List<float>();
@@ -470,9 +484,9 @@ public class Pathfinding : MonoBehaviour
             uvYValues.Add(uvMapToFace[face][vertexIndex].y);
         }
 
-        var x = Mathf.RoundToInt(uvXValues.Min() / tileSize); 
-        var y = Mathf.RoundToInt(uvYValues.Min() / tileSize);
-
+        int x = Mathf.RoundToInt(uvXValues.Min() / tileSize); //TODO: UV + floating point numbers = im too tired for this.
+        int y = Mathf.RoundToInt(uvYValues.Min() / tileSize);
+        
         return new GridPoint(face, x, y);
     }
 
