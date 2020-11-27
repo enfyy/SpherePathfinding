@@ -62,6 +62,9 @@ public enum ExtendedGrid
     LeftTop
 }
 
+/// <summary>
+/// This Class implements the A* pathfinding algorithm for usage on a perfect Sphere. Specifically a Cube-Sphere.
+/// </summary>
 public class Pathfinding : MonoBehaviour
 {
     public static int GridSize { get; private set; }
@@ -89,7 +92,7 @@ public class Pathfinding : MonoBehaviour
     }
 
     /// <summary>
-    /// The method of all methods this method is so great it kinda makes me wanna delete all other methods tbh
+    /// A* Pathfinding between two positions provided by two raycasts. 
     /// </summary>
     public void FindPath(RaycastHit playerRayHit, RaycastHit mouseRayHit)
     {
@@ -415,7 +418,7 @@ public class Pathfinding : MonoBehaviour
     }
 
     /// <summary>
-    /// Returns in which direction the provided face is directly connected to this face (if at all).
+    /// Returns in which direction the first face (start) is connected to the second face (end), if at all.
     /// </summary>
     private static ConnectionDirection GetConnectionDirection(CubeFace startFace, CubeFace endFace)
     {
@@ -452,6 +455,55 @@ public class Pathfinding : MonoBehaviour
             return ConnectionDirection.West;
 
         return ConnectionDirection.None; // Faces aren't connected.
+    }
+
+    /// <summary>
+    /// Returns the face that is connected to the provided face in the provided direction.
+    /// </summary>
+    public static CubeFace GetConnectedFace(CubeFace face, ConnectionDirection direction)
+    {
+        switch (direction)
+        {
+            case ConnectionDirection.North:
+                if (face == CubeFace.Front || face == CubeFace.Back || face == CubeFace.Left || face == CubeFace.Right)
+                    return CubeFace.Top;
+                if (face == CubeFace.Top || face == CubeFace.Bottom)
+                    return CubeFace.Back;
+                break;
+            
+            case ConnectionDirection.South:
+                if (face == CubeFace.Front || face == CubeFace.Back || face == CubeFace.Left || face == CubeFace.Right)
+                    return CubeFace.Bottom;
+                if (face == CubeFace.Top || face == CubeFace.Bottom)
+                    return CubeFace.Front;
+                break;
+            
+            case ConnectionDirection.East:
+                if (face == CubeFace.Front || face == CubeFace.Top)
+                    return CubeFace.Left;
+                if (face == CubeFace.Left)
+                    return CubeFace.Back;
+                if (face == CubeFace.Back || face == CubeFace.Bottom)
+                    return CubeFace.Right;
+                if (face == CubeFace.Right)
+                    return CubeFace.Front;
+                break;
+            
+            case ConnectionDirection.West:
+                if (face == CubeFace.Front || face == CubeFace.Top)
+                    return CubeFace.Right;
+                if (face == CubeFace.Right)
+                    return CubeFace.Back;
+                if (face == CubeFace.Back || face == CubeFace.Bottom)
+                    return CubeFace.Left;
+                if (face == CubeFace.Left)
+                    return CubeFace.Front;
+                break;
+            
+            default:
+                throw new Exception("Faces are not connected");
+        }
+        throw new Exception("Faces are not connected");
     }
     
     /// <summary>
