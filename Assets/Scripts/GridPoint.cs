@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
 using Pf = Pathfinding;
 
 /// <summary>
@@ -11,12 +10,9 @@ public class GridPoint
     public int y { get; set; }
     public CubeFace face { get; }
 
-    /// <summary>
-    /// Basic constructor.
-    /// </summary>
-    public GridPoint(CubeFace faceGrid, int x, int y)
+    public GridPoint(CubeFace face, int x, int y)
     {
-        face = faceGrid;
+        this.face = face;
         this.x = x;
         this.y = y;
     }
@@ -24,55 +20,21 @@ public class GridPoint
     /// <summary>
     ///  Updates the x and y coordinates as if the grid were to be rotated clockwise.
     /// </summary>
-    /// <param name="rotationCount90CW"> The count of 90deg rotations </param>
-    public void RotateGrid90CW(int rotationCount90CW = 1)
+    public void RotateGrid90CW()
     {
-        if (x >= Pf.GridSize || y >= Pf.GridSize)
-            throw new Exception("Array will be out of bounds");
-
-        // initialize matrix
-        bool[][] matrix = new bool[Pf.GridSize][];
-        for (int i = 0; i < Pf.GridSize; i++)
-        {
-            matrix[i] = new bool[Pf.GridSize];
-            for (int j = 0; j < Pf.GridSize; j++)
-                matrix[i][j] = false;
-        }
-
-        matrix[y][x] = true;
-        Array.Reverse(matrix);
-
-        for (int r = 0; r < rotationCount90CW; r++)
-        {
-            // transpose matrix
-            for (int i = 0; i < Pf.GridSize; i++)
-            {
-                for (int j = i; j < Pf.GridSize; j++)
-                {
-                    bool temp = matrix[i][j];
-                    matrix[i][j] = matrix[j][i];
-                    matrix[j][i] = temp;
-                }
-            }
-
-            // Reverse the matrix
-            for (int i = 0; i < Pf.GridSize; i++)
-                Array.Reverse(matrix[i]);
-        }
-
-        Array.Reverse(matrix);
-        for (int i = 0; i < Pf.GridSize; i++)
-        {
-            for (int j = 0; j < Pf.GridSize; j++)
-                if (matrix[i][j])
-                {
-                    x = j;
-                    y = i;
-                    return;
-                }
-        }
-
-        throw new Exception("Something went wrong while rotating the Matrix");
+        var tmp = x;
+        x = y;
+        y = -tmp + Pf.gridMax;
+    }
+    
+    /// <summary>
+    ///  Updates the x and y coordinates as if the grid were to be rotated counter-clockwise.
+    /// </summary>
+    public void RotateGrid90CCW()
+    {
+        var tmp = y;
+        y = x;
+        x = -tmp + Pf.gridMax;
     }
 
     /// <summary>
@@ -80,39 +42,7 @@ public class GridPoint
     /// </summary>
     public void MirrorGridHorizontal()
     {
-        if (x >= Pf.GridSize || y >= Pf.GridSize)
-            throw new Exception("Coordinates are outside the grid.");
-
-        // initialize matrix
-        bool[][] matrix = new bool[Pf.GridSize][];
-        for (int i = 0; i < Pf.GridSize; i++)
-        {
-            matrix[i] = new bool[Pf.GridSize];
-            for (int j = 0; j < Pf.GridSize; j++)
-                matrix[i][j] = false;
-        }
-
-        matrix[y][x] = true;
-        Array.Reverse(matrix);
-
-        for (int i = 0; i < Pf.GridSize; i++)
-        {
-            Array.Reverse(matrix[i]);
-        }
-
-        Array.Reverse(matrix);
-        for (int i = 0; i < Pf.GridSize; i++)
-        {
-            for (int j = 0; j < Pf.GridSize; j++)
-                if (matrix[i][j])
-                {
-                    x = j;
-                    y = i;
-                    return;
-                }
-        }
-
-        throw new Exception("Mirroring horizontally went wrong.");
+        y = -y + Pf.gridMax;
     }
 
     /// <summary>
@@ -120,33 +50,7 @@ public class GridPoint
     /// </summary>
     public void MirrorGridVertical()
     {
-        if (x >= Pf.GridSize || y >= Pf.GridSize)
-            throw new Exception("Coordinates are outside the grid.");
-
-        // initialize matrix
-        bool[][] matrix = new bool[Pf.GridSize][];
-        for (int i = 0; i < Pf.GridSize; i++)
-        {
-            matrix[i] = new bool[Pf.GridSize];
-            for (int j = 0; j < Pf.GridSize; j++)
-                matrix[i][j] = false;
-        }
-
-        matrix[y][x] = true;
-
-        Array.Reverse(matrix);
-        for (int i = 0; i < Pf.GridSize; i++)
-        {
-            for (int j = 0; j < Pf.GridSize; j++)
-                if (matrix[i][j])
-                {
-                    x = j;
-                    y = i;
-                    return;
-                }
-        }
-
-        throw new Exception("Mirroring vertically went wrong.");
+        x = -x + Pf.gridMax;
     }
 
     /// <summary>
@@ -156,15 +60,15 @@ public class GridPoint
     /// <returns> The GridZone in which the point in the grid lies.</returns>
     public GridZone DetermineGridZone()
     {
-        if (x >= Pf.GridSize || y >= Pf.GridSize)
+        if (x > Pf.gridMax || y > Pf.gridMax || y < 0 || x < 0)
             throw new Exception("Coordinates are outside the grid.");
 
 
-        int gridIndex = y * Pf.GridSize + x + 1;
-        int bottomLeftToTopRight = y + (y * Pf.GridSize) + 1;
-        int topLeftToBottomRight = Pf.GridSize + (y * Pf.GridSize) - y;
+        int gridIndex = y * Pf.gridSize + x + 1;
+        int bottomLeftToTopRight = y + (y * Pf.gridSize) + 1;
+        int topLeftToBottomRight = Pf.gridSize + (y * Pf.gridSize) - y;
 
-        bool topHalf = y >= Pf.GridSize / 2;
+        bool topHalf = y >= Pf.gridSize / 2;
         bool bottomHalf = !topHalf;
 
 
@@ -193,142 +97,5 @@ public class GridPoint
             return GridZone.BottomLeft;
 
         throw new Exception("Something went wrong while determining the grid zone.");
-    }
-
-    /// <summary>
-    /// Returns the neighbour that is not on the same grid.
-    /// </summary>
-    private GridPoint EdgeNeighbour(ConnectionDirection direction, int x, int y)
-    {
-        int neighbourX = x;
-        int neighbourY = y;
-
-        if (face == CubeFace.Front && direction == ConnectionDirection.East ||
-            face == CubeFace.Right && direction == ConnectionDirection.East ||
-            face == CubeFace.Back && direction == ConnectionDirection.East ||
-            face == CubeFace.Left && direction == ConnectionDirection.East ||
-            face == CubeFace.Left && direction == ConnectionDirection.North ||
-            face == CubeFace.Left && direction == ConnectionDirection.South)
-            neighbourX = 0;
-
-        if (face == CubeFace.Front && direction == ConnectionDirection.North ||
-            face == CubeFace.Back && direction == ConnectionDirection.South ||
-            face == CubeFace.Bottom)
-            neighbourY = 0;
-
-        if (face == CubeFace.Front && direction == ConnectionDirection.West ||
-            face == CubeFace.Right && direction == ConnectionDirection.West ||
-            face == CubeFace.Back && direction == ConnectionDirection.West ||
-            face == CubeFace.Left && direction == ConnectionDirection.West ||
-            face == CubeFace.Right && direction == ConnectionDirection.North ||
-            face == CubeFace.Right && direction == ConnectionDirection.South)
-            neighbourX = Pf.GridSize;
-
-        if (face == CubeFace.Front && direction == ConnectionDirection.South ||
-            face == CubeFace.Back && direction == ConnectionDirection.North ||
-            face == CubeFace.Top)
-            neighbourY = Pf.GridSize;
-
-        return new GridPoint(Pf.GetConnectedFace(face, direction), neighbourX, neighbourY);
-    }
-
-    /// <summary>
-    /// Returns a list of all the neighbouring GridPoints.
-    /// </summary>
-    public List<GridPoint> Neighbours()
-    {
-        List<GridPoint> neighbours = new List<GridPoint>();
-
-        if (y != Pf.GridSize && y != 0 && x != Pf.GridSize && x != 0)
-        {
-            // NO EDGE NEIGHBOURS
-            neighbours.Add(new GridPoint(face,    x,     y + 1));
-            neighbours.Add(new GridPoint(face,    x,     y - 1));
-            neighbours.Add(new GridPoint(face, x + 1, y + 1));
-            neighbours.Add(new GridPoint(face, x + 1,    y));
-            neighbours.Add(new GridPoint(face, x + 1, y - 1));
-            neighbours.Add(new GridPoint(face, x - 1, y + 1));
-            neighbours.Add(new GridPoint(face, x - 1, y - 1));
-            neighbours.Add(new GridPoint(face, x - 1,    y));
-        }
-        else if (x == 0) // LEFT EDGE
-        {
-            neighbours.Add(new GridPoint(face, x + 1, y));
-
-            if (y == Pf.GridSize) // TOP LEFT CORNER
-            {
-                neighbours.Add(new GridPoint(face, x, y - 1));
-                neighbours.Add(new GridPoint(face, x + 1, y - 1));
-                // NORTH EDGE NEIGHBOURS 
-                neighbours.Add(EdgeNeighbour(ConnectionDirection.North, x, y));
-                neighbours.Add(EdgeNeighbour(ConnectionDirection.North, x + 1, y));
-                // WEST EDGE NEIGHBOURS
-                neighbours.Add(EdgeNeighbour(ConnectionDirection.West, x, y));
-                neighbours.Add(EdgeNeighbour(ConnectionDirection.West, x, y - 1));
-            }
-            else if (y == 0) // BOTTOM LEFT CORNER
-            {
-                neighbours.Add(new GridPoint(face, x, y + 1));
-                neighbours.Add(new GridPoint(face, x + 1, y + 1));
-                // SOUTH EDGE NEIGHBOURS 
-                neighbours.Add(EdgeNeighbour(ConnectionDirection.South, x, y));
-                neighbours.Add(EdgeNeighbour(ConnectionDirection.South, x + 1, y));
-                // WEST EDGE NEIGHBOURS
-                neighbours.Add(EdgeNeighbour(ConnectionDirection.West, x, y));
-                neighbours.Add(EdgeNeighbour(ConnectionDirection.West, x, y + 1));
-            }
-            else
-            {
-                neighbours.Add(new GridPoint(face, x + 1, y + 1));
-                neighbours.Add(new GridPoint(face, x + 1, y - 1));
-                neighbours.Add(new GridPoint(face, x, y + 1));
-                neighbours.Add(new GridPoint(face, x, y - 1));
-
-                // WEST EDGE NEIGHBOURS
-                neighbours.Add(EdgeNeighbour(ConnectionDirection.West, x, y));
-                neighbours.Add(EdgeNeighbour(ConnectionDirection.West, x, y + 1));
-                neighbours.Add(EdgeNeighbour(ConnectionDirection.West, x, y - 1));
-            }
-        }
-        else if (x == Pf.GridSize) // RIGHT EDGE
-        {
-            neighbours.Add(new GridPoint(face, x - 1, y));
-
-            if (y == Pf.GridSize) // TOP RIGHT CORNER
-            {
-                neighbours.Add(new GridPoint(face, x, y - 1));
-                neighbours.Add(new GridPoint(face, x - 1, y - 1));
-                // NORTH EDGE NEIGHBOURS 
-                neighbours.Add(EdgeNeighbour(ConnectionDirection.North, x, y));
-                neighbours.Add(EdgeNeighbour(ConnectionDirection.North, x - 1, y));
-                // EAST EDGE NEIGHBOURS
-                neighbours.Add(EdgeNeighbour(ConnectionDirection.East, x, y));
-                neighbours.Add(EdgeNeighbour(ConnectionDirection.East, x, y - 1));
-            }
-            else if (y == 0) // BOTTOM RIGHT CORNER
-            {
-                neighbours.Add(new GridPoint(face, x - 1, y + 1));
-                neighbours.Add(new GridPoint(face, x, y + 1));
-                // EAST EDGE NEIGHBOURS 
-                neighbours.Add(EdgeNeighbour(ConnectionDirection.East, x, y));
-                neighbours.Add(EdgeNeighbour(ConnectionDirection.East, x, y + 1));
-                // SOUTH EDGE NEIGHBOURS
-                neighbours.Add(EdgeNeighbour(ConnectionDirection.South, x, y));
-                neighbours.Add(EdgeNeighbour(ConnectionDirection.South, x - 1, y));
-            }
-            else
-            {
-                neighbours.Add(new GridPoint(face, x - 1, y + 1));
-                neighbours.Add(new GridPoint(face, x - 1, y - 1));
-                neighbours.Add(new GridPoint(face, x, y + 1));
-                neighbours.Add(new GridPoint(face, x, y - 1));
-
-                // EAST EDGE NEIGHBOURS
-                neighbours.Add(EdgeNeighbour(ConnectionDirection.East, x, y));
-                neighbours.Add(EdgeNeighbour(ConnectionDirection.East, x, y + 1));
-                neighbours.Add(EdgeNeighbour(ConnectionDirection.East, x, y - 1));
-            }
-        }
-        return neighbours;
     }
 }

@@ -67,28 +67,30 @@ public enum ExtendedGrid
 /// </summary>
 public class Pathfinding : MonoBehaviour
 {
-    public static int GridSize { get; private set; }
+    
+    public static int gridSize { get; private set; }
+    public static int gridMax => gridSize - 1;
     public LayerMask layerMask;
-    public MeshFilter cubeSphereMeshFilter;
+    public GameObject cubeSphere;
     public DebugDraw debugDrawer;
     
     private Dictionary<CubeFace, Vector2[]> uvMapToFace;
+    private Mesh cubeSphereMesh;
     
     /// <summary>
     /// Start gets called at the start ;)
     /// </summary>
     private void Start()
     {
-        Mesh mesh = cubeSphereMeshFilter.sharedMesh;
-        uvMapToFace = new Dictionary<CubeFace, Vector2[]>()
-        {
-            {CubeFace.Front, mesh.uv}, {CubeFace.Top, mesh.uv2}, {CubeFace.Back, mesh.uv3},
-            {CubeFace.Bottom, mesh.uv4}, {CubeFace.Left, mesh.uv5}, {CubeFace.Right, mesh.uv6}
-        };
+        cubeSphereMesh = cubeSphere.GetComponent<MeshFilter>().mesh;
+        InitializeUvMapToFaceDictionary(cubeSphereMesh);
+        
         // All tiles are made of 2 triangles and theres 6 faces on the cube
-        var triangleCount = mesh.triangles.Length / 3;
-        GridSize = (int) Mathf.Sqrt(triangleCount / 2 / 6);
-        Debug.Log("Grid size: " + GridSize);
+        var triangleCount = cubeSphereMesh.triangles.Length / 3;
+        // ReSharper disable once PossibleLossOfFraction
+        gridSize = (int) Mathf.Sqrt(triangleCount / 2 / 6);
+        
+        InitializeNodeGrids(cubeSphereMesh.GetTriangles(0));
     }
 
     /// <summary>
@@ -96,8 +98,6 @@ public class Pathfinding : MonoBehaviour
     /// </summary>
     public void FindPath(RaycastHit playerRayHit, RaycastHit mouseRayHit)
     {
-        Mesh cubeSphereMesh = cubeSphereMeshFilter.sharedMesh;
-        Vector3[] vertices = cubeSphereMesh.vertices;
         int[] triangles = cubeSphereMesh.triangles;
 
         if (playerRayHit.triangleIndex == -1 || mouseRayHit.triangleIndex == -1)
@@ -107,25 +107,164 @@ public class Pathfinding : MonoBehaviour
         {
             triangles[playerRayHit.triangleIndex * 3 + 0],
             triangles[playerRayHit.triangleIndex * 3 + 1],
-            triangles[playerRayHit.triangleIndex * 3 + 2],
+            triangles[playerRayHit.triangleIndex * 3 + 2]
         };
         int[] endTriangleIndices =
         {
             triangles[mouseRayHit.triangleIndex * 3 + 0],
             triangles[mouseRayHit.triangleIndex * 3 + 1],
-            triangles[mouseRayHit.triangleIndex * 3 + 2],
+            triangles[mouseRayHit.triangleIndex * 3 + 2]
         };
-        
-        GridPoint startPoint = GridPointFromTriangle(startTriangleIndices);
-        GridPoint endPoint   = GridPointFromTriangle(endTriangleIndices);
-        debugDrawer.DrawTriangle(endTriangleIndices, mouseRayHit.collider.transform, cubeSphereMesh);
 
-        Debug.Log("Start: " + FaceFromVertex(startTriangleIndices[0]) + " [" + startPoint.x + "|" + startPoint.y +
-                  "] " + "End: " + FaceFromVertex(endTriangleIndices[0]) + " [" + endPoint.x + "|" + endPoint.y + "] ");
-        Debug.Log("Distance: " + CalculateShortestSurfaceDistance(startPoint, endPoint));         
+        Node end = NodeFromTriangle(endTriangleIndices);
+        //debugDrawer.DrawSelectedNode(end);
+        Debug.Log("| X: " + end.x + "| Y: " + end.y + " | Face: " + end.face);
+        //debugDrawer.HighlightNeighbours(end.Neighbours());
+        AStar(NodeFromTriangle(startTriangleIndices), NodeFromTriangle(endTriangleIndices));
+    }
+
+    /// <summary>
+    /// Implementation of the A* algorithm.
+    /// </summary>
+    private void AStar(Node startNode, Node endNode)
+    {
+        List<Node> open = new List<Node>();
+        HashSet<Node> closed = new HashSet<Node>();
+        List<Node> path = new List<Node>();
+        open.Add(startNode);
+
+        while (open.Count > 0 )
+        {
+            Node current = open[0];
+            for (int i = 1; i < open.Count; i++) // find node in open with lowest fCost
+            {
+                if (open[i].fCost < current.fCost || open[i].fCost == current.fCost && open[i].hCost < current.hCost)
+                    current = open[i];
+            }
+
+            open.Remove(current);
+            closed.Add(current); // add to closed list and remove from open list
+
+            if (current == endNode) // did we find the end ?
+            {
+                Debug.Log("Path found");
+                debugDrawer.HighlightPath(RetracePath(startNode, endNode));
+                return;
+            }
+
+            foreach (var neighbour in current.Neighbours())
+            {
+                if (!neighbour.walkable || closed.Contains(neighbour))
+                    continue;
+                
+                
+                int newCost = current.gCost + CalculateShortestSurfaceDistance(current.ToGridPoint(), neighbour.ToGridPoint());
+                if (newCost < neighbour.gCost || !open.Contains(neighbour))
+                {
+                    neighbour.gCost = newCost;
+                    neighbour.hCost = CalculateShortestSurfaceDistance(neighbour.ToGridPoint(), endNode.ToGridPoint());
+                    neighbour.parent = current;
+                    
+                    if (!open.Contains(neighbour))
+                        open.Add(neighbour);
+                }
+            }
+        }
+    }
+    
+    /// <summary>
+    ///  Retraces the path of traversed nodes from the start node to the end node.
+    /// </summary>
+    private List<Node> RetracePath(Node startNode, Node endNode)
+    {
+        List<Node> path = new List<Node>();
+        Node current = endNode;
+
+        while (current != startNode)
+        {
+            path.Add(current);
+            current = current.parent;
+        }
+
+        path.Reverse();
+        return path;
+    }
+
+    /// <summary>
+    /// Initializes the Dictionary that connects uv maps to CubeFaces
+    /// </summary>
+    /// <param name="mesh">The mesh that contains the uv maps.</param>
+    private void InitializeUvMapToFaceDictionary(Mesh mesh)
+    {
+        uvMapToFace = new Dictionary<CubeFace, Vector2[]>()
+        {
+            {CubeFace.Front, mesh.uv}, {CubeFace.Top, mesh.uv2}, {CubeFace.Back, mesh.uv3},
+            {CubeFace.Bottom, mesh.uv4}, {CubeFace.Left, mesh.uv5}, {CubeFace.Right, mesh.uv6}
+        };
+    }
+
+    /// <summary>
+    /// Initializes all the Nodes in the dictionary (Node.nodes).
+    /// </summary>
+    private void InitializeNodeGrids(int[] tri)
+    {
+        if (gridSize == 0) throw new Exception("can't initialize node grid before gridsize is initialized.");
+        Node.nodes = new Dictionary<Tuple<CubeFace, int, int>, Node>();
+        Vector3[] vertices = cubeSphereMesh.vertices;
         
-        //TODO: this is where A* should start probably.
+        // Create the node objects
+        foreach (CubeFace face in (CubeFace[]) Enum.GetValues(typeof(CubeFace)))
+        {
+            for (int x = 0; x < gridSize; x++)
+            {
+                for (int y = 0; y < gridSize; y++)
+                {
+                    var key = new Tuple<CubeFace, int, int>(face, x, y);
+                    Node.nodes[key] = new Node(face, x, y);
+                }
+            }
+        }
+
+        // set node triangles
+        for (int i = 0; i < tri.Length; i += 3)
+        {
+            // indices
+            int i1 = tri[i + 0];
+            int i2 = tri[i + 1];
+            int i3 = tri[i + 2];
+            Node node = NodeFromTriangle(new [] {i1,i2,i3});
+            if (node.worldPos != Vector3.zero) continue;
+            
+            // points in world space
+            Vector3[] points =
+            {
+                cubeSphere.transform.TransformPoint(vertices[i1]),
+                cubeSphere.transform.TransformPoint(vertices[i2]),
+                cubeSphere.transform.TransformPoint(vertices[i3])
+            };
+            node.AddTriangle(points);
+        }
+        // set world positions
+        foreach (var pair in Node.nodes)
+            pair.Value.CalculateWorldPosition();
+    }
+
+    /// <summary>
+    /// Calculates the shortest surface distance between two points on a 3D cube.
+    /// </summary>
+    /// <returns> The distance between the two points</returns>
+    private static int CalculateShortestSurfaceDistance(GridPoint start, GridPoint end)
+    {
+        // CASE 1: start and end point are on the same face.
+        if (start.face == end.face)
+            return CalculateShortestDistance(start, end);
+
+        // CASE 2: end point is on a face that is connected to the start point.
+        if (IsConnectedFace(start.face, end.face))
+            return ConnectedFaceDistance(start, end);
         
+        // CASE 3: start and end point are on opposing faces.
+        return OpposingFaceDistance(start, end);
     }
 
     /// <summary>
@@ -145,49 +284,61 @@ public class Pathfinding : MonoBehaviour
     }
 
     /// <summary>
-    /// Calculates the shortest surface distance between two points on a 3D cube.
+    /// Finds the shortest surface distance in the case of the points being on connected Faces.
+    /// This method is separate from CalculateShortestSurfaceDistance only for readability purposes.
     /// </summary>
-    /// <returns> The distance between the two points</returns>
-    private static int CalculateShortestSurfaceDistance(GridPoint start, GridPoint end)
+    private static int ConnectedFaceDistance(GridPoint start, GridPoint end)
     {
-        // CASE 1: start and end point are on the same face.
-        if (start.face == end.face)
-            return CalculateShortestDistance(start, end);
-        Debug.Log("Not Case 1");
-
-        // CASE 2: end point is on a face that is connected to the start point.
-        if (IsConnectedFace(start.face, end.face))
+        ConnectionDirection dir1 = GetConnectionDirection(start.face, end.face);
+        ConnectionDirection dir2 = GetConnectionDirection(start.face, end.face);
+            
+        if (dir1 == dir2) // rotate 180
         {
-            ConnectionDirection dir = GetConnectionDirection(start.face, end.face);
-            switch (dir)
+            end.RotateGrid90CW();
+            end.RotateGrid90CW();
+        } 
+        else if (!IsOppositeDirection(dir1, dir2))
+        { // rotate 90, but in which direction ???
+            if (dir1 == ConnectionDirection.North && dir2 == ConnectionDirection.East  ||
+                dir1 == ConnectionDirection.East  && dir2 == ConnectionDirection.South ||
+                dir1 == ConnectionDirection.South && dir2 == ConnectionDirection.West  ||
+                dir1 == ConnectionDirection.West  && dir2 == ConnectionDirection.North)
             {
-                case ConnectionDirection.North:
-                    end.y += GridSize;
-                    break;
-                
-                case ConnectionDirection.East:
-                    end.x += GridSize;
-                    break;
-                
-                case ConnectionDirection.South:
-                    start.y += GridSize;
-                    break;
-                
-                case ConnectionDirection.West:
-                    start.x += GridSize;
-                    break;
-                
-                case ConnectionDirection.None:
-                    throw new Exception("Calculating shortest surface distance should've been detected as Case 3 (opposite faces) but somehow got Case 2");
-                    
-                default:
-                    throw new Exception("Uh-oh");
+                end.RotateGrid90CW();
             }
-            return CalculateShortestDistance(start, end);
+            else
+            {
+                end.RotateGrid90CCW();
+            }
         }
-        Debug.Log("Not Case 2");
-        // CASE 3: start and end point are on opposing faces.
-        return OpposingFaceDistance(start, end);
+        switch (dir1)
+        {
+            case ConnectionDirection.North:
+                end.y += gridSize;
+                break;
+                
+            case ConnectionDirection.East:
+                end.x += gridSize;
+                break;
+                
+            case ConnectionDirection.South:
+                start.y += gridSize;
+                break;
+                
+            case ConnectionDirection.West:
+                start.x += gridSize;
+                break;
+                
+            case ConnectionDirection.None:
+                throw new Exception("Calculating shortest surface distance should've been detected as Case 3 (opposite faces) but somehow got Case 2");
+                    
+            default:
+                throw new Exception("Uh-oh");
+        }
+
+        
+        
+        return CalculateShortestDistance(start, end);
     }
     
     /// <summary>
@@ -305,80 +456,80 @@ public class Pathfinding : MonoBehaviour
             case ExtendedGrid.TopLeft:
                 end.MirrorGridHorizontal();
                 end.RotateGrid90CW();
-                start.x += GridSize;
-                end.y += (GridSize * 2);
+                start.x += gridSize;
+                end.y += (gridSize * 2);
                 break;
             
             case ExtendedGrid.TopMiddle:
                 end.MirrorGridVertical();
-                end.y += (GridSize * 2);
+                end.y += (gridSize * 2);
                 break;
             
             case ExtendedGrid.TopRight:
                 end.MirrorGridVertical();
                 end.RotateGrid90CW();
-                end.x += GridSize;
-                end.y += (GridSize * 2);
+                end.x += gridSize;
+                end.y += (gridSize * 2);
                 break;
             
             
             case ExtendedGrid.RightTop:
                 end.MirrorGridVertical();
                 end.RotateGrid90CW();
-                end.x += (GridSize * 2);
-                end.y += GridSize;
+                end.x += (gridSize * 2);
+                end.y += gridSize;
                 break;
             
             case ExtendedGrid.RightMiddle:
                 end.MirrorGridHorizontal();
-                end.x += (GridSize * 2);
+                end.x += (gridSize * 2);
                 break;
             
             case ExtendedGrid.RightBot:
                 end.MirrorGridHorizontal();
                 end.RotateGrid90CW();
-                start.y += GridSize;
-                end.x += GridSize * 2;
+                start.y += gridSize;
+                end.x += gridSize * 2;
                 break;
             
             
             case ExtendedGrid.BotRight:
                 end.MirrorGridHorizontal();
                 end.RotateGrid90CW();
-                start.y += GridSize * 2;
-                end.x += GridSize;
+                start.y += gridSize * 2;
+                end.x += gridSize;
                 break;
             
             case ExtendedGrid.BotMiddle:
                 end.MirrorGridVertical();
-                start.y += (GridSize * 2);
+                start.y += (gridSize * 2);
                 break;
             
             case ExtendedGrid.BotLeft:
                 end.MirrorGridVertical();
                 end.RotateGrid90CW();
-                start.x += GridSize;
-                start.y += GridSize * 2;
+                start.x += gridSize;
+                start.y += gridSize * 2;
                 break;
             
             
             case ExtendedGrid.LeftBot:
                 end.MirrorGridVertical();
                 end.RotateGrid90CW();
-                start.y += GridSize;
-                start.x += (GridSize * 2);
+                start.y += gridSize;
+                start.x += (gridSize * 2);
                 break;
             
             case ExtendedGrid.LeftMiddle:
                 end.MirrorGridHorizontal();
-                start.x += GridSize * 2;
+                start.x += gridSize * 2;
                 break;
             
             case ExtendedGrid.LeftTop:
                 end.MirrorGridHorizontal();
                 end.RotateGrid90CW();
-                start.x += GridSize * 2;
-                end.y += GridSize;
+                start.x += gridSize * 2;
+                end.y += gridSize;
                 break;
             
             default:
@@ -422,36 +573,44 @@ public class Pathfinding : MonoBehaviour
     /// </summary>
     private static ConnectionDirection GetConnectionDirection(CubeFace startFace, CubeFace endFace)
     {
-        if (startFace == CubeFace.Front  && endFace == CubeFace.Top    ||
+        if (
+            startFace == CubeFace.Front  && endFace == CubeFace.Top    ||
             startFace == CubeFace.Top    && endFace == CubeFace.Back   ||
             startFace == CubeFace.Back   && endFace == CubeFace.Bottom ||
             startFace == CubeFace.Bottom && endFace == CubeFace.Front  ||
             startFace == CubeFace.Right  && endFace == CubeFace.Top    ||
-            startFace == CubeFace.Left   && endFace == CubeFace.Top      )
+            startFace == CubeFace.Left   && endFace == CubeFace.Top      
+            )
             return ConnectionDirection.North;
         
-        if (startFace == CubeFace.Front  && endFace == CubeFace.Right  ||
+        if (
+            startFace == CubeFace.Front  && endFace == CubeFace.Right  ||
             startFace == CubeFace.Right  && endFace == CubeFace.Back   ||
             startFace == CubeFace.Back   && endFace == CubeFace.Left   ||
             startFace == CubeFace.Left   && endFace == CubeFace.Front  ||
             startFace == CubeFace.Top    && endFace == CubeFace.Right  ||
-            startFace == CubeFace.Bottom && endFace == CubeFace.Right    )
+            startFace == CubeFace.Bottom && endFace == CubeFace.Right    
+            )
             return ConnectionDirection.East;
         
-        if (startFace == CubeFace.Front  && endFace == CubeFace.Bottom ||
+        if (
+            startFace == CubeFace.Front  && endFace == CubeFace.Bottom ||
             startFace == CubeFace.Bottom && endFace == CubeFace.Back   ||
             startFace == CubeFace.Back   && endFace == CubeFace.Top    ||
             startFace == CubeFace.Top    && endFace == CubeFace.Front  ||
             startFace == CubeFace.Right  && endFace == CubeFace.Bottom ||
-            startFace == CubeFace.Left   && endFace == CubeFace.Bottom   )
+            startFace == CubeFace.Left   && endFace == CubeFace.Bottom   
+            )
             return ConnectionDirection.South;
         
-        if (startFace == CubeFace.Front  && endFace == CubeFace.Left   ||
+        if (
+            startFace == CubeFace.Front  && endFace == CubeFace.Left   ||
             startFace == CubeFace.Left   && endFace == CubeFace.Back   ||
             startFace == CubeFace.Back   && endFace == CubeFace.Right  ||
             startFace == CubeFace.Right  && endFace == CubeFace.Front  ||
             startFace == CubeFace.Top    && endFace == CubeFace.Left   ||
-            startFace == CubeFace.Bottom && endFace == CubeFace.Left     )
+            startFace == CubeFace.Bottom && endFace == CubeFace.Left     
+            )
             return ConnectionDirection.West;
 
         return ConnectionDirection.None; // Faces aren't connected.
@@ -462,71 +621,81 @@ public class Pathfinding : MonoBehaviour
     /// </summary>
     public static CubeFace GetConnectedFace(CubeFace face, ConnectionDirection direction)
     {
-        switch (direction)
-        {
-            case ConnectionDirection.North:
-                if (face == CubeFace.Front || face == CubeFace.Back || face == CubeFace.Left || face == CubeFace.Right)
-                    return CubeFace.Top;
-                if (face == CubeFace.Top || face == CubeFace.Bottom)
-                    return CubeFace.Back;
-                break;
-            
-            case ConnectionDirection.South:
-                if (face == CubeFace.Front || face == CubeFace.Back || face == CubeFace.Left || face == CubeFace.Right)
-                    return CubeFace.Bottom;
-                if (face == CubeFace.Top || face == CubeFace.Bottom)
-                    return CubeFace.Front;
-                break;
-            
-            case ConnectionDirection.East:
-                if (face == CubeFace.Front || face == CubeFace.Top)
-                    return CubeFace.Left;
-                if (face == CubeFace.Left)
-                    return CubeFace.Back;
-                if (face == CubeFace.Back || face == CubeFace.Bottom)
-                    return CubeFace.Right;
-                if (face == CubeFace.Right)
-                    return CubeFace.Front;
-                break;
-            
-            case ConnectionDirection.West:
-                if (face == CubeFace.Front || face == CubeFace.Top)
-                    return CubeFace.Right;
-                if (face == CubeFace.Right)
-                    return CubeFace.Back;
-                if (face == CubeFace.Back || face == CubeFace.Bottom)
-                    return CubeFace.Left;
-                if (face == CubeFace.Left)
-                    return CubeFace.Front;
-                break;
-            
-            default:
-                throw new Exception("Faces are not connected");
-        }
+        if (
+            face == CubeFace.Front && direction == ConnectionDirection.North ||
+            face == CubeFace.Left  && direction == ConnectionDirection.North ||
+            face == CubeFace.Right && direction == ConnectionDirection.North ||
+            face == CubeFace.Back  && direction == ConnectionDirection.North 
+            )
+            return CubeFace.Top;
+        
+        if (
+            face == CubeFace.Front && direction == ConnectionDirection.South ||
+            face == CubeFace.Left  && direction == ConnectionDirection.South ||
+            face == CubeFace.Right && direction == ConnectionDirection.South ||
+            face == CubeFace.Back  && direction == ConnectionDirection.South 
+            )
+            return CubeFace.Bottom;
+
+        if (
+            face == CubeFace.Right  && direction == ConnectionDirection.West  ||
+            face == CubeFace.Left   && direction == ConnectionDirection.East  ||
+            face == CubeFace.Top    && direction == ConnectionDirection.South ||
+            face == CubeFace.Bottom && direction == ConnectionDirection.North 
+            )
+            return CubeFace.Front;
+        
+        if (
+            face == CubeFace.Front  && direction == ConnectionDirection.East ||
+            face == CubeFace.Back   && direction == ConnectionDirection.West ||
+            face == CubeFace.Top    && direction == ConnectionDirection.East ||
+            face == CubeFace.Bottom && direction == ConnectionDirection.East 
+            )
+            return CubeFace.Right;
+
+        if (
+            face == CubeFace.Front  && direction == ConnectionDirection.West ||
+            face == CubeFace.Back   && direction == ConnectionDirection.East ||
+            face == CubeFace.Top    && direction == ConnectionDirection.West ||
+            face == CubeFace.Bottom && direction == ConnectionDirection.West 
+            )
+            return CubeFace.Left;
+
+        if (
+            face == CubeFace.Left   && direction == ConnectionDirection.West  ||
+            face == CubeFace.Right  && direction == ConnectionDirection.East  ||
+            face == CubeFace.Top    && direction == ConnectionDirection.North ||
+            face == CubeFace.Bottom && direction == ConnectionDirection.South 
+            )
+            return CubeFace.Back;
+        
         throw new Exception("Faces are not connected");
     }
     
     /// <summary>
-    /// Checks all UV maps to find out on which face the vertex lies on.
+    /// Checks all UV maps to find out on which face the vertices lie on.
     /// </summary>
-    private CubeFace FaceFromVertex(int vertexIndex)
+    private CubeFace FaceFromVertices(int[] vertexIndices)
     {
         foreach (var mapFacePair in uvMapToFace)
         {
-            var point = mapFacePair.Value[vertexIndex];
-            if (point.x >= 0 && point.y >= 0)
+            var point1 = mapFacePair.Value[vertexIndices[0]];
+            var point2 = mapFacePair.Value[vertexIndices[1]];
+            var point3 = mapFacePair.Value[vertexIndices[2]];
+            
+            if (point1.x >= 0 && point1.y >= 0 && point2.x >= 0 && point2.y >= 0 && point3.x >= 0 && point3.y >= 0)
                 return mapFacePair.Key;
         }
         throw new Exception("Vertex is not on any of the UV maps.");
     }
 
     /// <summary>
-    /// Converts the position of a triangle (3 vertices) into a position on a grid.
+    /// Converts the position of a triangle (3 vertices) into a Node.
     /// </summary>
-    private GridPoint GridPointFromTriangle(int[] vertexIndices)
+    private Node NodeFromTriangle(int[] vertexIndices)
     {
-        float tileSize = (float) 1 / GridSize;
-        CubeFace face = FaceFromVertex(vertexIndices[0]); // they should all be on the same face, surely nothing can go wrong
+        float tileSize = (float) 1 / gridSize;
+        CubeFace face = FaceFromVertices(vertexIndices);
         List<float> uvXValues = new List<float>();
         List<float> uvYValues = new List<float>();
 
@@ -536,10 +705,22 @@ public class Pathfinding : MonoBehaviour
             uvYValues.Add(uvMapToFace[face][vertexIndex].y);
         }
 
-        int x = Mathf.RoundToInt(uvXValues.Min() / tileSize); //TODO: UV + floating point numbers = im too tired for this.
+        //TODO: floating point number headaches when gridSize isn't as even
+        int x = Mathf.RoundToInt(uvXValues.Min() / tileSize); 
         int y = Mathf.RoundToInt(uvYValues.Min() / tileSize);
         
-        return new GridPoint(face, x, y);
+        return Node.GetNode(face, x, y);
+    }
+
+    /// <summary>
+    ///  Returns true if the directions provided are opposite directions
+    /// </summary>
+    public static bool IsOppositeDirection(ConnectionDirection dir1, ConnectionDirection dir2)
+    {
+        return dir1 == ConnectionDirection.North && dir2 == ConnectionDirection.South ||
+               dir1 == ConnectionDirection.South && dir2 == ConnectionDirection.North ||
+               dir1 == ConnectionDirection.East  && dir2 == ConnectionDirection.West  ||
+               dir1 == ConnectionDirection.West  && dir2 == ConnectionDirection.East;
     }
 
 }

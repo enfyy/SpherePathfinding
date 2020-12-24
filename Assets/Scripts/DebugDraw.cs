@@ -1,43 +1,68 @@
-﻿using UnityEngine;
+﻿using System;
+using System.Collections.Generic;
+using System.Dynamic;
+using UnityEngine;
 
 public class DebugDraw : MonoBehaviour
 {
-    public GameObject pointPrefab;
-    public LineRenderer lr;
-    private GameObject[] trianglePoints;
-    
-    // Start is called before the first frame update
-    void Start()
+    public GameObject pointPrefabRed;
+    public GameObject pointPrefabBlue;
+    private List<GameObject> highlightedPath;
+    private List<GameObject> highlightedNeighbours;
+    private GameObject selectedNode;
+
+    private void Start()
     {
-        lr = GetComponent<LineRenderer>();
-        lr.enabled = false;
-        trianglePoints = new GameObject[3];
+        highlightedPath = new List<GameObject>();
+        highlightedNeighbours = new List<GameObject>();
     }
 
-    private void ClearTrianglePoints()
+    public void DrawSelectedNode(Node node)
     {
-        foreach (var point in trianglePoints)
-            Destroy(point);
+        if (selectedNode != null)
+            Destroy(selectedNode);
+
+        float r = Node.nodeRadius;
+        pointPrefabRed.transform.localScale = new Vector3(r,r,r);
+       GameObject go = Instantiate(pointPrefabRed, node.worldPos, Quaternion.identity);
+       selectedNode = go;
+
     }
 
-    public void DrawTriangle(int[] triangleIndices, Transform hitTransform, Mesh mesh)
+    public void HighlightNeighbours(List<Node> neighbours)
     {
-        if (!lr.enabled)
-            lr.enabled = true;
-
-        Vector3[] positions = new Vector3[4];
-        positions[0] = hitTransform.TransformPoint(mesh.vertices[triangleIndices[0]]);
-        positions[1] = hitTransform.TransformPoint(mesh.vertices[triangleIndices[1]]);
-        positions[2] = hitTransform.TransformPoint(mesh.vertices[triangleIndices[2]]);
-        positions[3] = hitTransform.TransformPoint(mesh.vertices[triangleIndices[0]]);
-
-        ClearTrianglePoints();
+        if (highlightedNeighbours.Count > 0)
+        {
+            foreach (var marker in highlightedNeighbours)
+                Destroy(marker);
+            highlightedNeighbours.Clear();
+        }
         
-        trianglePoints[0] = Instantiate(pointPrefab, positions[0], Quaternion.identity);
-        trianglePoints[1] = Instantiate(pointPrefab, positions[1], Quaternion.identity);
-        trianglePoints[2] = Instantiate(pointPrefab, positions[2], Quaternion.identity);
-
-        lr.SetPositions(positions);
-        
+        float r = Node.nodeRadius;
+        pointPrefabBlue.transform.localScale = new Vector3(r,r,r);
+        foreach (var node in neighbours)
+        {
+            GameObject go = Instantiate(pointPrefabBlue, node.worldPos, Quaternion.identity);
+            highlightedNeighbours.Add(go);
+        }
     }
+
+    public void HighlightPath(List<Node> path)
+    {
+        if (highlightedPath.Count > 0)
+        {
+            foreach (var marker in highlightedPath)
+                Destroy(marker);
+            highlightedPath.Clear();
+        }
+        
+        float r = Node.nodeRadius;
+        pointPrefabRed.transform.localScale = new Vector3(r,r,r);
+        foreach (var node in path)
+        {
+            GameObject go = Instantiate(pointPrefabRed, node.worldPos, Quaternion.identity);
+            highlightedPath.Add(go);
+        }
+    }
+
 }
